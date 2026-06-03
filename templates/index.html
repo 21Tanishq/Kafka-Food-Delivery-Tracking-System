@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+    <title>FoodFlow Live Dashboard</title>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+
+        *{
+            margin:0;
+            padding:0;
+            box-sizing:border-box;
+        }
+
+        body{
+            font-family:Arial,sans-serif;
+            background:#f4f6f9;
+            padding:20px;
+        }
+
+        .header{
+            text-align:center;
+            margin-bottom:25px;
+        }
+
+        .header h1{
+            color:#fc8019;
+            font-size:40px;
+        }
+
+        .header p{
+            color:#666;
+            margin-top:10px;
+        }
+
+        .stats{
+            display:flex;
+            gap:20px;
+            flex-wrap:wrap;
+            margin-bottom:25px;
+        }
+
+        .stat-card{
+            flex:1;
+            min-width:220px;
+            background:white;
+            padding:25px;
+            border-radius:15px;
+            text-align:center;
+            box-shadow:0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        .stat-card h2{
+            color:#fc8019;
+            font-size:32px;
+        }
+
+        .chart-card{
+            background:white;
+            border-radius:15px;
+            padding:20px;
+            margin-bottom:25px;
+            box-shadow:0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        .main-layout{
+            display:flex;
+            gap:20px;
+        }
+
+        .orders{
+            flex:3;
+            display:grid;
+            grid-template-columns:repeat(auto-fill,minmax(320px,1fr));
+            gap:20px;
+        }
+
+        .activity-panel{
+            flex:1;
+            min-width:280px;
+            background:white;
+            border-radius:15px;
+            padding:20px;
+            box-shadow:0 4px 10px rgba(0,0,0,0.1);
+            max-height:700px;
+            overflow-y:auto;
+        }
+
+        .activity-item{
+            padding:10px 0;
+            border-bottom:1px solid #eee;
+        }
+
+        .order-card{
+            background:white;
+            border-radius:15px;
+            padding:20px;
+            box-shadow:0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        .order-header{
+            display:flex;
+            justify-content:space-between;
+            margin-bottom:10px;
+        }
+
+        .order-id{
+            font-weight:bold;
+            font-size:18px;
+        }
+
+        .status{
+            padding:8px 14px;
+            border-radius:20px;
+            color:white;
+            font-size:12px;
+            font-weight:bold;
+        }
+
+        .picked_up{
+            background:#f1c40f;
+            color:black;
+        }
+
+        .out_for_delivery{
+            background:#00bcd4;
+        }
+
+        .delivered{
+            background:#2ecc71;
+        }
+
+        .time{
+            color:#666;
+            margin-top:10px;
+        }
+
+        .timeline{
+            margin-top:15px;
+        }
+
+        .step{
+            border-left:3px solid #ddd;
+            padding-left:10px;
+            margin:8px 0;
+            color:#777;
+        }
+
+        .step.done{
+            border-left:3px solid #2ecc71;
+            color:#2ecc71;
+            font-weight:bold;
+        }
+
+        .progress{
+            width:100%;
+            height:10px;
+            background:#ddd;
+            border-radius:20px;
+            overflow:hidden;
+            margin-top:15px;
+        }
+
+        .progress-fill{
+            height:100%;
+            background:#fc8019;
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+<div class="header">
+
+    <h1>🍔 FoodFlow Live Dashboard</h1>
+    <p>Kafka Powered Real-Time Food Delivery Tracking</p>
+
+</div>
+
+<div class="stats">
+
+    <div class="stat-card">
+        <h2 id="total-orders">0</h2>
+        <p>📦 Orders</p>
+    </div>
+
+    <div class="stat-card">
+        <h2 id="revenue">₹0</h2>
+        <p>💰 Revenue</p>
+    </div>
+
+    <div class="stat-card">
+        <h2 id="avg-order">₹0</h2>
+        <p>💵 Avg Order</p>
+    </div>
+
+    <div class="stat-card">
+        <h2 id="top-food">-</h2>
+        <p>🍕 Top Food</p>
+    </div>
+
+</div>
+
+<div class="chart-card">
+
+    <h2>📈 Revenue Trend</h2>
+
+    <canvas id="revenueChart"></canvas>
+
+</div>
+<div class="chart-card">
+
+    <h2>🛵 Delivery Agents</h2>
+
+    <div id="agents-panel"></div>
+
+</div>
+
+<div class="main-layout">
+
+    <div class="orders" id="orders-container"></div>
+
+    <div class="activity-panel">
+
+        <h2>📢 Live Activity</h2>
+
+        <div id="activity-feed"></div>
+
+    </div>
+
+</div>
+
+<script>
+
+const socket = io();
+
+let revenueChart;
+
+const progressMap = {
+    "PICKED_UP": 33,
+    "OUT_FOR_DELIVERY": 66,
+    "DELIVERED": 100
+};
+
+function getStatusClass(status){
+
+    if(status === "PICKED_UP") return "picked_up";
+    if(status === "OUT_FOR_DELIVERY") return "out_for_delivery";
+    if(status === "DELIVERED") return "delivered";
+
+    return "";
+}
+
+async function loadAnalytics(){
+
+    let response = await fetch('/analytics');
+    let data = await response.json();
+
+    document.getElementById("total-orders").innerText =
+        data.total_orders;
+
+    document.getElementById("revenue").innerText =
+        "₹" + data.revenue;
+
+    document.getElementById("avg-order").innerText =
+        "₹" + data.avg_order;
+
+    document.getElementById("top-food").innerText =
+        data.top_food;
+}
+
+async function loadRevenueChart(){
+
+    let response = await fetch('/revenue_history');
+    let data = await response.json();
+
+    const ctx = document.getElementById('revenueChart');
+
+    if(revenueChart){
+        revenueChart.destroy();
+    }
+
+    revenueChart = new Chart(ctx, {
+
+        type: 'line',
+
+        data: {
+
+            labels: data.labels,
+
+            datasets: [{
+                label: 'Revenue',
+                data: data.values,
+                borderWidth: 3,
+                tension: 0.3
+            }]
+        },
+
+        options: {
+            responsive:true
+        }
+
+    });
+}
+
+async function loadActivity(){
+
+    let response = await fetch('/events');
+    let data = await response.json();
+
+    let feed =
+        document.getElementById("activity-feed");
+
+    feed.innerHTML = "";
+
+    data.forEach(event => {
+
+        feed.innerHTML += `
+
+        <div class="activity-item">
+
+            <strong>Order #${event[0]}</strong>
+
+            <br>
+
+            ${event[1]}
+
+            <br>
+
+            <small>${event[2]}</small>
+
+        </div>
+
+        `;
+    });
+}
+async function loadAgents(){
+
+    let response =
+        await fetch('/agents');
+
+    let data =
+        await response.json();
+
+    let panel =
+        document.getElementById(
+            "agents-panel"
+        );
+
+    panel.innerHTML = "";
+
+    data.forEach(agent => {
+
+        panel.innerHTML += `
+
+        <div style="
+            padding:12px;
+            margin:10px;
+            background:#f7f7f7;
+            border-radius:10px;
+        ">
+
+            <strong>${agent[0]}</strong>
+
+            <br>
+
+            Status:
+            ${agent[1]}
+
+            <br>
+
+            Order:
+            ${agent[2] || "-"}
+
+        </div>
+
+        `;
+    });
+}
+socket.on("update", function(data){
+
+    let container =
+        document.getElementById("orders-container");
+
+    container.innerHTML = "";
+
+    data.forEach(row => {
+
+        let orderId = row[0];
+        let status = row[1];
+        let timestamp = row[2];
+
+        let progress =
+            progressMap[status] || 0;
+
+        let picked =
+            status === "PICKED_UP" ||
+            status === "OUT_FOR_DELIVERY" ||
+            status === "DELIVERED";
+
+        let out =
+            status === "OUT_FOR_DELIVERY" ||
+            status === "DELIVERED";
+
+        let delivered =
+            status === "DELIVERED";
+
+        container.innerHTML += `
+
+        <div class="order-card">
+
+            <div class="order-header">
+
+                <div class="order-id">
+                    🍕 Order #${orderId}
+                </div>
+
+                <div class="status ${getStatusClass(status)}">
+                    ${status}
+                </div>
+
+            </div>
+
+            <div class="time">
+                ⏰ ${timestamp}
+            </div>
+
+            <div class="timeline">
+
+                <div class="step ${picked ? 'done':''}">
+                    ${picked ? '✅':'⚪'} Picked Up
+                </div>
+
+                <div class="step ${out ? 'done':''}">
+                    ${out ? '✅':'⚪'} Out For Delivery
+                </div>
+
+                <div class="step ${delivered ? 'done':''}">
+                    ${delivered ? '✅':'⚪'} Delivered
+                </div>
+
+            </div>
+
+            <div class="progress">
+
+                <div class="progress-fill"
+                     style="width:${progress}%">
+                </div>
+
+            </div>
+
+        </div>
+
+        `;
+    });
+});
+
+setInterval(loadAnalytics, 3000);
+setInterval(loadActivity, 3000);
+setInterval(loadRevenueChart, 5000);
+setInterval(loadAgents,3000);
+loadAgents();
+
+loadAnalytics();
+loadActivity();
+loadRevenueChart();
+
+</script>
+
+</body>
+</html>
