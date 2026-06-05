@@ -195,6 +195,34 @@ def agent_stats():
         "busy": busy,
         "total": total
     })
+@app.route("/notifications")
+def get_notifications():
+
+    conn = sqlite3.connect("food_delivery.db")
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER,
+            message TEXT,
+            type TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
+        SELECT order_id, message, type, timestamp
+        FROM notifications
+        ORDER BY id DESC
+        LIMIT 20
+    """)
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return jsonify(rows)
 
 # ==========================
 # START SERVER

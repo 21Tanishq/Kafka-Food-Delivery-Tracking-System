@@ -234,6 +234,10 @@
     </div>
 
 </div>
+<div class="activity-panel">
+    <h2>📱 Notifications</h2>
+    <div id="notification-feed"></div>
+</div>
 
 <script>
 
@@ -382,6 +386,28 @@ async function loadAgents(){
         `;
     });
 }
+async function loadNotifications(){
+
+    let response = await fetch('/notifications');
+    let data = await response.json();
+
+    let feed = document.getElementById("notification-feed");
+
+    feed.innerHTML = "";
+
+    data.forEach(noti => {
+
+        feed.innerHTML += `
+        <div class="activity-item">
+            <strong>Order #${noti[0]}</strong><br>
+            ${noti[1]}<br>
+            <small>${noti[3]}</small>
+        </div>
+        `;
+    });
+}
+
+
 socket.on("update", function(data){
 
     let container =
@@ -465,6 +491,8 @@ setInterval(loadActivity, 3000);
 setInterval(loadRevenueChart, 5000);
 setInterval(loadAgents,3000);
 loadAgents();
+setInterval(loadNotifications, 3000);
+loadNotifications();
 
 loadAnalytics();
 loadActivity();
