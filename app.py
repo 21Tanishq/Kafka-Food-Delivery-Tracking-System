@@ -223,6 +223,27 @@ def get_notifications():
     conn.close()
 
     return jsonify(rows)
+@app.route("/system_stats")
+def system_stats():
+    conn = sqlite3.connect("food_delivery.db")
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM notifications")
+    notifications = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM orders")
+    orders = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM order_events")
+    events = cursor.fetchone()[0]
+
+    conn.close()
+
+    return jsonify({
+        "notifications": notifications,
+        "orders": orders,
+        "events": events
+    })
 
 # ==========================
 # START SERVER

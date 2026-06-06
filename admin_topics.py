@@ -21,5 +21,12 @@ except Exception as e:
     print("Create topic error:", e)
 
 print("Updated topics:", admin.list_topics())
+# add to admin_topics.py
+
+NewTopic(
+    name="retry_orders",
+    num_partitions=1,
+    replication_factor=1
+)
 
 admin.close()
